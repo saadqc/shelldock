@@ -31,7 +31,8 @@ const sessionManager = createSessionManager({
       mainWindow.webContents.send(channel, payload);
     }
   },
-  logDebug
+  logDebug,
+  getSettings: () => settings
 });
 
 function buildMenu() {

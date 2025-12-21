@@ -54,6 +54,12 @@ const DEFAULT_SETTINGS = {
     connection: {
       autoConnectOnSelect: { type: 'boolean', value: false }
     }
+  },
+  shell: {
+    local: {
+      command: { type: 'string', value: '' },
+      args: { type: 'string', value: '' }
+    }
   }
 };
 

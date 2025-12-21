@@ -9,6 +9,76 @@ const OSC7_PREFIX = '\u001b]7;file://';
 const OSC7_BEL = '\u0007';
 const OSC7_ST = '\u001b\\';
 
+function readSetting(settings, category, subcategory, field, fallback) {
+  const node = settings && settings[category] && settings[category][subcategory]
+    ? settings[category][subcategory][field]
+    : null;
+  if (node && Object.prototype.hasOwnProperty.call(node, 'value')) {
+    return node.value;
+  }
+  return fallback;
+}
+
+function stripWrappingQuotes(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function splitArgs(value) {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return [];
+  }
+  const args = [];
+  let current = '';
+  let quote = null;
+  for (let i = 0; i < raw.length; i += 1) {
+    const char = raw[i];
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (current) {
+        args.push(current);
+        current = '';
+      }
+      continue;
+    }
+    current += char;
+  }
+  if (current) {
+    args.push(current);
+  }
+  return args;
+}
+
+function getDefaultLocalShell() {
+  if (process.platform === 'win32') {
+    return process.env.COMSPEC || 'cmd.exe';
+  }
+  if (process.platform === 'darwin') {
+    return '/bin/zsh';
+  }
+  return '/bin/bash';
+}
+
 function parseOsc7Payload(payload) {
   const slashIndex = payload.indexOf('/');
   const pathPart = slashIndex >= 0 ? payload.slice(slashIndex) : '/';
@@ -73,7 +143,7 @@ function injectPromptTracking(session) {
   session.ptyProcess.write(`${script}\n`);
 }
 
-function createSessionManager({ sendToRenderer, logDebug }) {
+function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
   const sessions = new Map();
 
   function getSession(tabId) {
@@ -181,9 +251,13 @@ function createSessionManager({ sendToRenderer, logDebug }) {
     if (!session) {
       return;
     }
-    const isWin = process.platform === 'win32';
-    const shell = isWin ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/zsh');
-    const args = [];
+    const settings = typeof getSettings === 'function' ? getSettings() : null;
+    const commandSetting = readSetting(settings, 'shell', 'local', 'command', '');
+    const argsSetting = readSetting(settings, 'shell', 'local', 'args', '');
+    const normalizedCommand = stripWrappingQuotes(commandSetting);
+    const useDefault = !normalizedCommand || normalizedCommand.toLowerCase() === 'auto';
+    const shell = useDefault ? getDefaultLocalShell() : normalizedCommand;
+    const args = splitArgs(argsSetting);
     session.hostConfig = { alias: 'local', type: 'local' };
     session.sessionType = 'local';
     session.ptyProcess = pty.spawn(shell, args, {

@@ -9,6 +9,8 @@
   const treePageSize = document.getElementById('tree-page-size');
   const restoreTabs = document.getElementById('restore-tabs');
   const autoConnect = document.getElementById('auto-connect');
+  const localShellCommand = document.getElementById('local-shell-command');
+  const localShellArgs = document.getElementById('local-shell-args');
   const shortcutNewTab = document.getElementById('shortcut-new-tab');
   const shortcutCloseTab = document.getElementById('shortcut-close-tab');
 
@@ -100,6 +102,14 @@
       writeValue(['ui', 'connection', 'autoConnectOnSelect'], 'boolean', autoConnect.checked);
       scheduleSave();
     });
+    localShellCommand.addEventListener('input', () => {
+      writeValue(['shell', 'local', 'command'], 'string', localShellCommand.value.trim());
+      scheduleSave();
+    });
+    localShellArgs.addEventListener('input', () => {
+      writeValue(['shell', 'local', 'args'], 'string', localShellArgs.value.trim());
+      scheduleSave();
+    });
     shortcutNewTab.addEventListener('input', () => {
       writeValue(['ui', 'shortcuts', 'newTab'], 'string', shortcutNewTab.value.trim());
       scheduleSave();
@@ -129,6 +139,8 @@
       treePageSize.value = readValue(['ui', 'tree', 'pageSize'], 500);
       restoreTabs.checked = Boolean(readValue(['ui', 'session', 'restoreTabs'], false));
       autoConnect.checked = Boolean(readValue(['ui', 'connection', 'autoConnectOnSelect'], false));
+      localShellCommand.value = readValue(['shell', 'local', 'command'], '');
+      localShellArgs.value = readValue(['shell', 'local', 'args'], '');
       shortcutNewTab.value = readValue(['ui', 'shortcuts', 'newTab'], 'mod+t');
       shortcutCloseTab.value = readValue(['ui', 'shortcuts', 'closeTab'], 'mod+w');
       bindInputs();

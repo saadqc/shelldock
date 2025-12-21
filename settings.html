@@ -134,6 +134,15 @@
         <div class="hint">Connect immediately when selecting a host from the dropdown.</div>
       </div>
       <div class="card">
+        <h2>Local shell</h2>
+        <label for="local-shell-command">Shell command</label>
+        <input id="local-shell-command" type="text" placeholder="auto" />
+        <div class="hint">Leave blank for defaults: macOS /bin/zsh, Linux /bin/bash, Windows cmd.exe.</div>
+        <label for="local-shell-args">Shell args</label>
+        <input id="local-shell-args" type="text" placeholder="" />
+        <div class="hint">Optional. For zsh: -f to skip rc. For bash: --noprofile --norc.</div>
+      </div>
+      <div class="card">
         <h2>Shortcuts</h2>
         <label for="shortcut-new-tab">New tab</label>
         <input id="shortcut-new-tab" type="text" placeholder="mod+t" />
