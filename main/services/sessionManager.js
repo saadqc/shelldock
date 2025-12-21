@@ -122,9 +122,13 @@ function getMacBrewEntries() {
   return entries;
 }
 
+function shouldInjectMacPaths(settings) {
+  return Boolean(readSetting(settings, 'shell', 'local', 'injectMacPaths', true));
+}
+
 function getLocalPathPrependEntries(settings) {
   const entries = [];
-  if (process.platform === 'darwin') {
+  if (process.platform === 'darwin' && shouldInjectMacPaths(settings)) {
     entries.push(...getMacBrewEntries());
   }
   const configured = readSetting(settings, 'shell', 'local', 'pathPrepend', '');
@@ -206,7 +210,7 @@ function mergePathEntries(primary, extra) {
   return merged;
 }
 
-function buildLocalEnv(shellPath) {
+function buildLocalEnv(shellPath, settings) {
   const env = { ...process.env };
   if (process.platform === 'darwin') {
     const baseEntries = String(env.PATH || '')
@@ -214,7 +218,8 @@ function buildLocalEnv(shellPath) {
       .map((entry) => entry.trim())
       .filter(Boolean);
     const systemEntries = getMacPathEntries();
-    const merged = mergePathEntries([...getMacBrewEntries(), ...baseEntries], systemEntries);
+    const brewEntries = shouldInjectMacPaths(settings) ? getMacBrewEntries() : [];
+    const merged = mergePathEntries([...brewEntries, ...baseEntries], systemEntries);
     if (merged.length) {
       env.PATH = merged.join(path.delimiter);
     }
@@ -413,7 +418,7 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
     const rawArgs = String(argsSetting || '').trim();
     const useDefaultArgs = !rawArgs || rawArgs.toLowerCase() === 'auto';
     const args = useDefaultArgs ? getDefaultLocalShellArgs(shell) : splitArgs(rawArgs);
-    const env = buildLocalEnv(shell);
+    const env = buildLocalEnv(shell, settings);
     session.hostConfig = { alias: 'local', type: 'local' };
     session.sessionType = 'local';
     session.ptyProcess = pty.spawn(shell, args, {

@@ -59,7 +59,8 @@ const DEFAULT_SETTINGS = {
     local: {
       command: { type: 'string', value: '' },
       args: { type: 'string', value: '' },
-      pathPrepend: { type: 'string', value: '' }
+      pathPrepend: { type: 'string', value: '' },
+      injectMacPaths: { type: 'boolean', value: true }
     }
   }
 };

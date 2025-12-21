@@ -12,6 +12,7 @@
   const localShellCommand = document.getElementById('local-shell-command');
   const localShellArgs = document.getElementById('local-shell-args');
   const localShellPathPrepend = document.getElementById('local-shell-path-prepend');
+  const localShellMacPaths = document.getElementById('local-shell-mac-paths');
   const shortcutNewTab = document.getElementById('shortcut-new-tab');
   const shortcutCloseTab = document.getElementById('shortcut-close-tab');
 
@@ -115,6 +116,10 @@
       writeValue(['shell', 'local', 'pathPrepend'], 'string', localShellPathPrepend.value.trim());
       scheduleSave();
     });
+    localShellMacPaths.addEventListener('change', () => {
+      writeValue(['shell', 'local', 'injectMacPaths'], 'boolean', localShellMacPaths.checked);
+      scheduleSave();
+    });
     shortcutNewTab.addEventListener('input', () => {
       writeValue(['ui', 'shortcuts', 'newTab'], 'string', shortcutNewTab.value.trim());
       scheduleSave();
@@ -147,6 +152,7 @@
       localShellCommand.value = readValue(['shell', 'local', 'command'], '');
       localShellArgs.value = readValue(['shell', 'local', 'args'], '');
       localShellPathPrepend.value = readValue(['shell', 'local', 'pathPrepend'], '');
+      localShellMacPaths.checked = Boolean(readValue(['shell', 'local', 'injectMacPaths'], true));
       shortcutNewTab.value = readValue(['ui', 'shortcuts', 'newTab'], 'mod+t');
       shortcutCloseTab.value = readValue(['ui', 'shortcuts', 'closeTab'], 'mod+w');
       bindInputs();

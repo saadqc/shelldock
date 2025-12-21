@@ -144,6 +144,11 @@
         <label for="local-shell-path-prepend">PATH prepend</label>
         <input id="local-shell-path-prepend" type="text" placeholder="auto" />
         <div class="hint">Optional. Use : (macOS/Linux) or ; (Windows) separators.</div>
+        <div class="checkbox-row">
+          <input id="local-shell-mac-paths" type="checkbox" />
+          <label for="local-shell-mac-paths">Inject macOS Homebrew PATH</label>
+        </div>
+        <div class="hint">Adds /opt/homebrew and /usr/local entries on macOS when enabled.</div>
       </div>
       <div class="card">
         <h2>Shortcuts</h2>
