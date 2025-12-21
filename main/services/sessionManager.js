@@ -69,6 +69,17 @@ function splitArgs(value) {
   return args;
 }
 
+function splitPathList(value) {
+  return String(value || '')
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
 function getDefaultLocalShell() {
   if (process.platform === 'win32') {
     return process.env.COMSPEC || 'cmd.exe';
@@ -92,6 +103,60 @@ function getDefaultLocalShellArgs(shellPath) {
     return ['-l'];
   }
   return [];
+}
+
+function getMacBrewEntries() {
+  const entries = [];
+  if (fs.existsSync('/opt/homebrew/bin')) {
+    entries.push('/opt/homebrew/bin');
+  }
+  if (fs.existsSync('/opt/homebrew/sbin')) {
+    entries.push('/opt/homebrew/sbin');
+  }
+  if (fs.existsSync('/usr/local/bin')) {
+    entries.push('/usr/local/bin');
+  }
+  if (fs.existsSync('/usr/local/sbin')) {
+    entries.push('/usr/local/sbin');
+  }
+  return entries;
+}
+
+function getLocalPathPrependEntries(settings) {
+  const entries = [];
+  if (process.platform === 'darwin') {
+    entries.push(...getMacBrewEntries());
+  }
+  const configured = readSetting(settings, 'shell', 'local', 'pathPrepend', '');
+  const normalized = String(configured || '').trim();
+  if (normalized && normalized.toLowerCase() !== 'auto') {
+    entries.push(...splitPathList(normalized));
+  }
+  return mergePathEntries(entries, []);
+}
+
+function buildLocalBootstrapScript(settings) {
+  if (process.platform === 'win32') {
+    return '';
+  }
+  const prependEntries = getLocalPathPrependEntries(settings);
+  if (!prependEntries.length) {
+    return '';
+  }
+  const quotedEntries = prependEntries.map((entry) => shellQuote(entry)).join(' ');
+  return [
+    '__shelldock_prepend_path() {',
+    '  local entry',
+    `  for entry in ${quotedEntries}; do`,
+    '    case ":$PATH:" in',
+    '      *":$entry:"*) ;;',
+    '      *) PATH="$entry:$PATH";;',
+    '    esac',
+    '  done',
+    '  export PATH',
+    '}',
+    '__shelldock_prepend_path'
+  ].join('\n');
 }
 
 function readLines(filepath) {
@@ -144,25 +209,12 @@ function mergePathEntries(primary, extra) {
 function buildLocalEnv(shellPath) {
   const env = { ...process.env };
   if (process.platform === 'darwin') {
-    const brewEntries = [];
-    if (fs.existsSync('/opt/homebrew/bin')) {
-      brewEntries.push('/opt/homebrew/bin');
-    }
-    if (fs.existsSync('/opt/homebrew/sbin')) {
-      brewEntries.push('/opt/homebrew/sbin');
-    }
-    if (fs.existsSync('/usr/local/bin')) {
-      brewEntries.push('/usr/local/bin');
-    }
-    if (fs.existsSync('/usr/local/sbin')) {
-      brewEntries.push('/usr/local/sbin');
-    }
     const baseEntries = String(env.PATH || '')
       .split(path.delimiter)
       .map((entry) => entry.trim())
       .filter(Boolean);
     const systemEntries = getMacPathEntries();
-    const merged = mergePathEntries([...brewEntries, ...baseEntries], systemEntries);
+    const merged = mergePathEntries([...getMacBrewEntries(), ...baseEntries], systemEntries);
     if (merged.length) {
       env.PATH = merged.join(path.delimiter);
     }
@@ -222,19 +274,26 @@ function consumeOsc7Sequences(session, data) {
   return paths;
 }
 
-function injectPromptTracking(session) {
+function injectPromptTracking(session, settings) {
   if (!session || !session.ptyProcess) {
     return;
   }
-  const script = [
+  const parts = [];
+  const localBootstrap = session.sessionType === 'local'
+    ? buildLocalBootstrapScript(settings)
+    : '';
+  if (localBootstrap) {
+    parts.push(localBootstrap);
+  }
+  parts.push([
     '__shelldock_pwd() { printf "\\033]7;file://%s%s\\007" "${HOSTNAME:-localhost}" "$PWD"; }',
     'if [ -n "$ZSH_VERSION" ]; then',
     '  precmd_functions+=(__shelldock_pwd)',
     'else',
     '  export PROMPT_COMMAND="__shelldock_pwd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"',
     'fi'
-  ].join('\n');
-  session.ptyProcess.write(`${script}\n`);
+  ].join('\n'));
+  session.ptyProcess.write(`${parts.join('\n')}\n`);
 }
 
 function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
@@ -337,7 +396,7 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
       send('ssh:exit', { tabId });
     });
 
-    setTimeout(() => injectPromptTracking(session), 600);
+    setTimeout(() => injectPromptTracking(session, null), 600);
   }
 
   function spawnLocalShell(tabId) {
@@ -383,7 +442,7 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
       send('ssh:exit', { tabId });
     });
 
-    setTimeout(() => injectPromptTracking(session), 300);
+    setTimeout(() => injectPromptTracking(session, settings), 300);
   }
 
   async function disconnect(tabId) {

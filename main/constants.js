@@ -58,7 +58,8 @@ const DEFAULT_SETTINGS = {
   shell: {
     local: {
       command: { type: 'string', value: '' },
-      args: { type: 'string', value: '' }
+      args: { type: 'string', value: '' },
+      pathPrepend: { type: 'string', value: '' }
     }
   }
 };

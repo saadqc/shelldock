@@ -11,6 +11,7 @@
   const autoConnect = document.getElementById('auto-connect');
   const localShellCommand = document.getElementById('local-shell-command');
   const localShellArgs = document.getElementById('local-shell-args');
+  const localShellPathPrepend = document.getElementById('local-shell-path-prepend');
   const shortcutNewTab = document.getElementById('shortcut-new-tab');
   const shortcutCloseTab = document.getElementById('shortcut-close-tab');
 
@@ -110,6 +111,10 @@
       writeValue(['shell', 'local', 'args'], 'string', localShellArgs.value.trim());
       scheduleSave();
     });
+    localShellPathPrepend.addEventListener('input', () => {
+      writeValue(['shell', 'local', 'pathPrepend'], 'string', localShellPathPrepend.value.trim());
+      scheduleSave();
+    });
     shortcutNewTab.addEventListener('input', () => {
       writeValue(['ui', 'shortcuts', 'newTab'], 'string', shortcutNewTab.value.trim());
       scheduleSave();
@@ -141,6 +146,7 @@
       autoConnect.checked = Boolean(readValue(['ui', 'connection', 'autoConnectOnSelect'], false));
       localShellCommand.value = readValue(['shell', 'local', 'command'], '');
       localShellArgs.value = readValue(['shell', 'local', 'args'], '');
+      localShellPathPrepend.value = readValue(['shell', 'local', 'pathPrepend'], '');
       shortcutNewTab.value = readValue(['ui', 'shortcuts', 'newTab'], 'mod+t');
       shortcutCloseTab.value = readValue(['ui', 'shortcuts', 'closeTab'], 'mod+w');
       bindInputs();
