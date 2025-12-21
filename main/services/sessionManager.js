@@ -94,6 +94,72 @@ function getDefaultLocalShellArgs(shellPath) {
   return [];
 }
 
+function readLines(filepath) {
+  try {
+    return fs.readFileSync(filepath, 'utf8')
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch (err) {
+    return [];
+  }
+}
+
+function getMacPathEntries() {
+  const entries = [];
+  for (const line of readLines('/etc/paths')) {
+    entries.push(line);
+  }
+  try {
+    const extraFiles = fs.readdirSync('/etc/paths.d').sort();
+    for (const filename of extraFiles) {
+      const fullPath = path.join('/etc/paths.d', filename);
+      for (const line of readLines(fullPath)) {
+        entries.push(line);
+      }
+    }
+  } catch (err) {
+  }
+  return entries;
+}
+
+function mergePathEntries(primary, extra) {
+  const seen = new Set();
+  const merged = [];
+  for (const entry of primary) {
+    if (entry && !seen.has(entry)) {
+      seen.add(entry);
+      merged.push(entry);
+    }
+  }
+  for (const entry of extra) {
+    if (entry && !seen.has(entry)) {
+      seen.add(entry);
+      merged.push(entry);
+    }
+  }
+  return merged;
+}
+
+function buildLocalEnv(shellPath) {
+  const env = { ...process.env };
+  if (process.platform === 'darwin') {
+    const baseEntries = String(env.PATH || '')
+      .split(path.delimiter)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    const systemEntries = getMacPathEntries();
+    const merged = mergePathEntries(baseEntries, systemEntries);
+    if (merged.length) {
+      env.PATH = merged.join(path.delimiter);
+    }
+  }
+  if (shellPath) {
+    env.SHELL = shellPath;
+  }
+  return env;
+}
+
 function parseOsc7Payload(payload) {
   const slashIndex = payload.indexOf('/');
   const pathPart = slashIndex >= 0 ? payload.slice(slashIndex) : '/';
@@ -275,6 +341,7 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
     const rawArgs = String(argsSetting || '').trim();
     const useDefaultArgs = !rawArgs || rawArgs.toLowerCase() === 'auto';
     const args = useDefaultArgs ? getDefaultLocalShellArgs(shell) : splitArgs(rawArgs);
+    const env = buildLocalEnv(shell);
     session.hostConfig = { alias: 'local', type: 'local' };
     session.sessionType = 'local';
     session.ptyProcess = pty.spawn(shell, args, {
@@ -282,7 +349,7 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
       cols: 80,
       rows: 24,
       cwd: os.homedir(),
-      env: process.env
+      env
     });
 
     session.ptyProcess.onData((data) => {
