@@ -73,10 +73,25 @@ function getDefaultLocalShell() {
   if (process.platform === 'win32') {
     return process.env.COMSPEC || 'cmd.exe';
   }
+  if (process.env.SHELL) {
+    return process.env.SHELL;
+  }
   if (process.platform === 'darwin') {
     return '/bin/zsh';
   }
   return '/bin/bash';
+}
+
+function getDefaultLocalShellArgs(shellPath) {
+  if (process.platform === 'win32') {
+    return [];
+  }
+  const base = path.basename(shellPath || '').toLowerCase();
+  const normalized = base.endsWith('.exe') ? base.slice(0, -4) : base;
+  if (normalized === 'zsh' || normalized === 'bash') {
+    return ['-l'];
+  }
+  return [];
 }
 
 function parseOsc7Payload(payload) {
@@ -257,7 +272,9 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
     const normalizedCommand = stripWrappingQuotes(commandSetting);
     const useDefault = !normalizedCommand || normalizedCommand.toLowerCase() === 'auto';
     const shell = useDefault ? getDefaultLocalShell() : normalizedCommand;
-    const args = splitArgs(argsSetting);
+    const rawArgs = String(argsSetting || '').trim();
+    const useDefaultArgs = !rawArgs || rawArgs.toLowerCase() === 'auto';
+    const args = useDefaultArgs ? getDefaultLocalShellArgs(shell) : splitArgs(rawArgs);
     session.hostConfig = { alias: 'local', type: 'local' };
     session.sessionType = 'local';
     session.ptyProcess = pty.spawn(shell, args, {
