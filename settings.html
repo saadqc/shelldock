@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Shelldock Settings</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        font-family: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        background: #0b0e14;
+        color: #e6e6e6;
+      }
+      header {
+        padding: 16px;
+        border-bottom: 1px solid #1f2430;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0;
+      }
+      main {
+        padding: 16px;
+        display: grid;
+        gap: 16px;
+      }
+      .card {
+        border: 1px solid #1f2430;
+        background: #0f1420;
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .card h2 {
+        margin: 0 0 8px;
+        font-size: 14px;
+        color: #9aa4b2;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        margin-bottom: 6px;
+        color: #b5bfcc;
+      }
+      input,
+      select,
+      textarea {
+        width: 100%;
+        font-size: 12px;
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid #2a2f3a;
+        background: #141a26;
+        color: #e6e6e6;
+        margin-bottom: 10px;
+      }
+      textarea {
+        min-height: 120px;
+        font-family: "SF Mono", Menlo, monospace;
+        resize: vertical;
+      }
+      .checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .checkbox-row input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+      }
+      .checkbox-row label {
+        margin: 0;
+      }
+      .hint {
+        font-size: 11px;
+        color: #7c8796;
+        margin-top: -6px;
+        margin-bottom: 10px;
+      }
+      .status {
+        font-size: 12px;
+        color: #8dd0ff;
+      }
+      .status.error {
+        color: #f38ba8;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Settings</h1>
+    </header>
+    <main>
+      <div class="card">
+        <h2>Editor</h2>
+        <label for="editor-mode">Open mode</label>
+        <select id="editor-mode">
+          <option value="remote-shell">Remote shell command</option>
+          <option value="local-command">Local command</option>
+          <option value="local-download">Download and open locally</option>
+          <option value="sftp-uri">Open sftp:// URI</option>
+        </select>
+        <label for="editor-command">Remote command template</label>
+        <input id="editor-command" type="text" />
+        <div class="hint">Use {path}, {escapedPath}, {host}, {user}, {port}</div>
+        <label for="editor-local-command">Local command template</label>
+        <input id="editor-local-command" type="text" />
+        <div class="hint">Use {path}, {host}, {user}, {port}, {sftpUri}</div>
+        <label for="editor-uri">SFTP URI template</label>
+        <input id="editor-uri" type="text" />
+        <div class="hint">Use {path}, {host}, {user}, {port}</div>
+        <label for="editor-associations">File associations (JSON)</label>
+        <textarea id="editor-associations"></textarea>
+        <div class="hint">Array of {pattern, mode, commandTemplate, localCommandTemplate, sftpUriTemplate}</div>
+      </div>
+      <div class="card">
+        <h2>UI</h2>
+        <label for="tree-page-size">Tree page size</label>
+        <input id="tree-page-size" type="number" min="100" max="2000" step="50" />
+        <div class="hint">Maximum nodes per directory page in the tree view.</div>
+        <div class="checkbox-row">
+          <input id="restore-tabs" type="checkbox" />
+          <label for="restore-tabs">Restore tabs on launch</label>
+        </div>
+        <div class="hint">Reopen tabs with their last known host and directory.</div>
+        <div class="checkbox-row">
+          <input id="auto-connect" type="checkbox" />
+          <label for="auto-connect">Auto connect on host select</label>
+        </div>
+        <div class="hint">Connect immediately when selecting a host from the dropdown.</div>
+      </div>
+      <div class="card">
+        <h2>Shortcuts</h2>
+        <label for="shortcut-new-tab">New tab</label>
+        <input id="shortcut-new-tab" type="text" placeholder="mod+t" />
+        <div class="hint">Use mod for Cmd/Ctrl. Example: mod+t or ctrl+t.</div>
+        <label for="shortcut-close-tab">Close tab</label>
+        <input id="shortcut-close-tab" type="text" placeholder="mod+w" />
+        <div class="hint">Example: mod+w or cmd+w.</div>
+      </div>
+      <div class="status" id="settings-status">Saved</div>
+    </main>
+    <script src="settings.js"></script>
+  </body>
+</html>

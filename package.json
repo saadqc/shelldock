@@ -1,0 +1,86 @@
+{
+  "name": "shelldock",
+  "version": "0.1.0",
+  "description": "macOS-first SSH client with xterm.js",
+  "author": "Saad Abdullah <saadfast.qc@gmail.com>",
+  "main": "main.js",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "start:gui": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "postinstall": "node node_modules/cpu-features/buildcheck.js > node_modules/cpu-features/buildcheck.gypi && electron-builder install-app-deps",
+    "test:ssh-config": "node scripts/ssh-config-test.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "node-pty": "^1.0.0",
+    "ssh2": "^1.15.0",
+    "ssh2-sftp-client": "^10.0.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.shelldock.app",
+    "productName": "Shelldock",
+    "afterPack": "scripts/adhoc-sign-mac.js",
+    "directories": {
+      "output": "release/${productName}-${version}"
+    },
+    "files": [
+      "main.js",
+      "main/**",
+      "preload.js",
+      "renderer/**",
+      "index.html",
+      "settings.html",
+      "settings.js",
+      "assets/**",
+      "package.json",
+      "node_modules/**"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icons/dock.png",
+      "hardenedRuntime": false,
+      "identity": null,
+      "notarize": false
+    },
+    "dmg": {
+      "title": "Shelldock",
+      "iconSize": 96,
+      "contents": [
+        {
+          "x": 180,
+          "y": 170
+        },
+        {
+          "x": 480,
+          "y": 170,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  }
+}

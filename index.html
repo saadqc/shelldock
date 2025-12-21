@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Shelldock</title>
+    <link rel="stylesheet" href="./node_modules/xterm/css/xterm.css" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        font-family: "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        background: #0b0e14;
+        color: #e6e6e6;
+      }
+      #app {
+        display: flex;
+        height: 100vh;
+        width: 100vw;
+      }
+      #sidebar {
+        width: 300px;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid #1f2430;
+        background: #0f1420;
+        overflow: hidden;
+      }
+      #tabs {
+        display: flex;
+        gap: 6px;
+        padding: 10px 12px;
+        border-bottom: 1px solid #1f2430;
+      }
+      .tab-btn {
+        flex: 1;
+        font-size: 12px;
+        padding: 6px 8px;
+        border-radius: 8px;
+        border: 1px solid #2a2f3a;
+        background: #141a26;
+        color: #9aa4b2;
+        cursor: pointer;
+      }
+      .tab-btn.active {
+        background: #1a2232;
+        color: #e6e6e6;
+        border-color: #3b4252;
+      }
+      #tab-panels {
+        flex: 1;
+        overflow: hidden;
+      }
+      .tab-panel {
+        height: 100%;
+        overflow: auto;
+        display: none;
+        flex-direction: column;
+        min-height: 0;
+        flex: 1;
+      }
+      .tab-panel.active {
+        display: flex;
+      }
+      #workspace {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        background: #0b0e14;
+      }
+      #session-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-bottom: 1px solid #1f2430;
+        background: #0f1420;
+      }
+      #session-tabs {
+        display: flex;
+        gap: 6px;
+        flex: 1;
+        overflow-x: auto;
+      }
+      .session-tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 8px;
+        border: 1px solid #2a2f3a;
+        background: #141a26;
+        color: #9aa4b2;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .session-tab.active {
+        background: #1a2232;
+        color: #e6e6e6;
+        border-color: #3b4252;
+      }
+      .session-tab .close-btn {
+        font-size: 12px;
+        color: #7c8796;
+      }
+      #terminal-stack {
+        flex: 1;
+        position: relative;
+      }
+      .terminal-pane {
+        position: absolute;
+        inset: 0;
+        display: none;
+      }
+      .terminal-pane.active {
+        display: block;
+      }
+      .section {
+        padding: 12px;
+        border-bottom: 1px solid #1f2430;
+      }
+      .section-title {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #9aa4b2;
+        margin-bottom: 8px;
+      }
+      .section-header {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #9aa4b2;
+        background: transparent;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        margin-bottom: 8px;
+      }
+      .section-header span:last-child {
+        color: #7c8796;
+      }
+      .section-body.collapsed {
+        display: none;
+      }
+      #tab-files {
+        flex-direction: column;
+        gap: 0;
+        min-height: 0;
+      }
+      #tab-files .section {
+        flex: 0 0 auto;
+      }
+      #tab-files .section.tree-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      #tree-section {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .path-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .path-row input {
+        flex: 1;
+        min-width: 0;
+      }
+      .path-list {
+        display: grid;
+        gap: 6px;
+        max-height: 70px;
+        overflow: auto;
+        margin-bottom: 8px;
+      }
+      .path-item {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .path-item .path-btn {
+        flex: 1;
+      }
+      .path-remove {
+        padding: 4px 6px;
+        font-size: 11px;
+        border-radius: 6px;
+      }
+      .icon-btn {
+        width: 28px;
+        min-width: 28px;
+        padding: 4px 0;
+        text-align: center;
+      }
+      .subsection-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #7c8796;
+        margin-bottom: 6px;
+      }
+      .row select {
+        width: 190px;
+        flex: 0 0 auto;
+      }
+      .row button {
+        flex: 1 0 auto;
+        white-space: nowrap;
+      }
+      select,
+      input,
+      button {
+        font-size: 12px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid #2a2f3a;
+        background: #141a26;
+        color: #e6e6e6;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: #3b4252;
+      }
+      #status {
+        margin-top: 8px;
+        font-size: 12px;
+        color: #8dd0ff;
+      }
+      #status.error {
+        color: #f38ba8;
+      }
+      #file-tree {
+        flex: 1;
+        overflow: auto;
+        font-size: 12px;
+        line-height: 1.4;
+        min-height: 0;
+      }
+      .tree-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        padding: 2px 0;
+        cursor: pointer;
+        user-select: none;
+        border-radius: 6px;
+      }
+      .tree-row:hover {
+        color: #8dd0ff;
+      }
+      .tree-row.selected {
+        background: rgba(66, 120, 255, 0.25);
+        color: #e6e6e6;
+      }
+      .tree-row.drop-target {
+        outline: 1px dashed rgba(141, 208, 255, 0.6);
+      }
+      .tree-indicator {
+        width: 12px;
+        display: inline-block;
+        color: #9aa4b2;
+      }
+      .tree-icon {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+        display: inline-block;
+        background-color: #9aa4b2;
+        -webkit-mask-position: center;
+        -webkit-mask-repeat: no-repeat;
+        -webkit-mask-size: contain;
+        mask-position: center;
+        mask-repeat: no-repeat;
+        mask-size: contain;
+      }
+      .icon-folder {
+        background-color: #d9a441;
+        -webkit-mask-image: url('./assets/icons/file-icons/folder.svg');
+        mask-image: url('./assets/icons/file-icons/folder.svg');
+      }
+      .icon-folder-open {
+        background-color: #d9a441;
+        -webkit-mask-image: url('./assets/icons/file-icons/folder-open.svg');
+        mask-image: url('./assets/icons/file-icons/folder-open.svg');
+      }
+      .icon-file {
+        background-color: #9aa4b2;
+        -webkit-mask-image: url('./assets/icons/file-icons/file-outline.svg');
+        mask-image: url('./assets/icons/file-icons/file-outline.svg');
+      }
+      .icon-code {
+        background-color: #8dd0ff;
+        -webkit-mask-image: url('./assets/icons/file-icons/file-code-outline.svg');
+        mask-image: url('./assets/icons/file-icons/file-code-outline.svg');
+      }
+      .icon-pdf {
+        background-color: #e05661;
+        -webkit-mask-image: url('./assets/icons/file-icons/file-pdf-box.svg');
+        mask-image: url('./assets/icons/file-icons/file-pdf-box.svg');
+      }
+      .icon-word {
+        background-color: #4f7cc9;
+        -webkit-mask-image: url('./assets/icons/file-icons/file-word-box.svg');
+        mask-image: url('./assets/icons/file-icons/file-word-box.svg');
+      }
+      .icon-excel {
+        background-color: #3cab6e;
+        -webkit-mask-image: url('./assets/icons/file-icons/file-excel-box.svg');
+        mask-image: url('./assets/icons/file-icons/file-excel-box.svg');
+      }
+      .icon-powerpoint {
+        background-color: #e07b39;
+        -webkit-mask-image: url('./assets/icons/file-icons/file-powerpoint-box.svg');
+        mask-image: url('./assets/icons/file-icons/file-powerpoint-box.svg');
+      }
+      .icon-image {
+        background-color: #b88cff;
+        -webkit-mask-image: url('./assets/icons/file-icons/file-image-outline.svg');
+        mask-image: url('./assets/icons/file-icons/file-image-outline.svg');
+      }
+      .icon-video {
+        background-color: #ff7e9a;
+        -webkit-mask-image: url('./assets/icons/file-icons/file-video-outline.svg');
+        mask-image: url('./assets/icons/file-icons/file-video-outline.svg');
+      }
+      .icon-audio {
+        background-color: #f3b45e;
+        -webkit-mask-image: url('./assets/icons/file-icons/file-music-outline.svg');
+        mask-image: url('./assets/icons/file-icons/file-music-outline.svg');
+      }
+      .icon-zip {
+        background-color: #c7cdd9;
+        -webkit-mask-image: url('./assets/icons/file-icons/zip-box.svg');
+        mask-image: url('./assets/icons/file-icons/zip-box.svg');
+      }
+      .icon-js {
+        background-color: #f7df1e;
+        -webkit-mask-image: url('./assets/icons/file-icons/language-javascript.svg');
+        mask-image: url('./assets/icons/file-icons/language-javascript.svg');
+      }
+      .icon-ts {
+        background-color: #1f9cf0;
+        -webkit-mask-image: url('./assets/icons/file-icons/language-typescript.svg');
+        mask-image: url('./assets/icons/file-icons/language-typescript.svg');
+      }
+      .icon-py {
+        background-color: #ffd343;
+        -webkit-mask-image: url('./assets/icons/file-icons/language-python.svg');
+        mask-image: url('./assets/icons/file-icons/language-python.svg');
+      }
+      .icon-rb {
+        background-color: #d2545e;
+        -webkit-mask-image: url('./assets/icons/file-icons/language-ruby.svg');
+        mask-image: url('./assets/icons/file-icons/language-ruby.svg');
+      }
+      .icon-php {
+        background-color: #aeb9ff;
+        -webkit-mask-image: url('./assets/icons/file-icons/language-php.svg');
+        mask-image: url('./assets/icons/file-icons/language-php.svg');
+      }
+      .icon-java {
+        background-color: #e76f51;
+        -webkit-mask-image: url('./assets/icons/file-icons/language-java.svg');
+        mask-image: url('./assets/icons/file-icons/language-java.svg');
+      }
+      .icon-md {
+        background-color: #b5bfcc;
+        -webkit-mask-image: url('./assets/icons/file-icons/language-markdown.svg');
+        mask-image: url('./assets/icons/file-icons/language-markdown.svg');
+      }
+      .icon-html {
+        background-color: #ff8a3d;
+        -webkit-mask-image: url('./assets/icons/file-icons/language-html5.svg');
+        mask-image: url('./assets/icons/file-icons/language-html5.svg');
+      }
+      .icon-css {
+        background-color: #64b5f6;
+        -webkit-mask-image: url('./assets/icons/file-icons/language-css3.svg');
+        mask-image: url('./assets/icons/file-icons/language-css3.svg');
+      }
+      .icon-json {
+        background-color: #ffd166;
+        -webkit-mask-image: url('./assets/icons/file-icons/code-json.svg');
+        mask-image: url('./assets/icons/file-icons/code-json.svg');
+      }
+      .icon-terminal {
+        background-color: #b5bfcc;
+        -webkit-mask-image: url('./assets/icons/file-icons/console-line.svg');
+        mask-image: url('./assets/icons/file-icons/console-line.svg');
+      }
+      .icon-docker {
+        background-color: #39a2ff;
+        -webkit-mask-image: url('./assets/icons/file-icons/docker.svg');
+        mask-image: url('./assets/icons/file-icons/docker.svg');
+      }
+      .icon-git {
+        background-color: #f05133;
+        -webkit-mask-image: url('./assets/icons/file-icons/git.svg');
+        mask-image: url('./assets/icons/file-icons/git.svg');
+      }
+      .command-btn {
+        width: 100%;
+        margin-bottom: 6px;
+        text-align: left;
+      }
+      .command-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 6px 4px;
+        border-radius: 6px;
+      }
+      .command-row:hover {
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .command-main {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        text-align: left;
+      }
+      .command-title {
+        font-size: 12px;
+        color: #e6e6e6;
+      }
+      .command-sub {
+        font-size: 11px;
+        color: #7c8796;
+      }
+      .command-actions {
+        display: flex;
+        gap: 6px;
+      }
+      .command-actions button {
+        padding: 4px 6px;
+        font-size: 11px;
+      }
+      .command-editor {
+        margin-top: 8px;
+        display: grid;
+        gap: 6px;
+      }
+      .command-editor .row {
+        gap: 6px;
+      }
+      .ghost-btn {
+        background: transparent;
+        border-color: #2a2f3a;
+        color: #9aa4b2;
+      }
+      .path-btn {
+        width: 100%;
+        text-align: left;
+      }
+      .tree-more {
+        color: #7c8796;
+      }
+      #commands {
+        max-height: 160px;
+        overflow: auto;
+      }
+      .transfer-block {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+      #transfer-status {
+        max-height: 120px;
+        overflow: auto;
+        font-size: 11px;
+        color: #9aa4b2;
+      }
+      .transfer-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 4px 0;
+      }
+      .transfer-row.complete {
+        color: #a6e3a1;
+      }
+      .context-menu {
+        position: fixed;
+        min-width: 140px;
+        background: #141a26;
+        border: 1px solid #2a2f3a;
+        border-radius: 8px;
+        padding: 6px;
+        display: none;
+        z-index: 1000;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      }
+      .context-menu.open {
+        display: block;
+      }
+      .context-menu button {
+        width: 100%;
+        text-align: left;
+        padding: 6px 8px;
+        border: none;
+        background: transparent;
+      }
+      .context-menu button:hover {
+        background: #1a2232;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="sidebar">
+        <div class="section">
+          <div class="section-title">Connection</div>
+          <div class="row">
+            <select id="host-select"></select>
+            <button id="connect-btn">Connect</button>
+          </div>
+          <div id="status">Disconnected</div>
+        </div>
+        <div id="tabs">
+          <button class="tab-btn active" data-tab="files">Files</button>
+          <button class="tab-btn" data-tab="actions">Actions</button>
+        </div>
+        <div id="tab-panels">
+          <div id="tab-files" class="tab-panel active">
+            <div class="section tree-section">
+              <button class="section-header" data-section="tree">
+                <span>Remote File Tree</span>
+                <span id="tree-chevron">▾</span>
+              </button>
+              <div class="section-body" id="tree-section">
+                <div class="path-row">
+                  <button id="back-btn" class="icon-btn" title="Back" aria-label="Back">&lt;</button>
+                  <button id="forward-btn" class="icon-btn" title="Forward" aria-label="Forward">&gt;</button>
+                  <input type="text" id="path-input" placeholder="/remote/path" />
+                  <button id="path-go-btn" class="icon-btn" title="Go" aria-label="Go">⏎</button>
+                  <button id="path-save-btn" class="icon-btn" title="Save location" aria-label="Save location">★</button>
+                </div>
+                <div id="file-tree">Not connected</div>
+              </div>
+            </div>
+            <div class="section">
+              <button class="section-header" data-section="saved">
+                <span>Saved Locations</span>
+                <span id="saved-chevron">▾</span>
+              </button>
+              <div class="section-body" id="saved-section">
+                <div id="saved-paths" class="path-list"></div>
+              </div>
+            </div>
+            <div class="section">
+              <button class="section-header" data-section="recent">
+                <span>Recent Locations</span>
+                <span id="recent-chevron">▾</span>
+              </button>
+              <div class="section-body" id="recent-section">
+                <div id="recent-paths" class="path-list"></div>
+              </div>
+            </div>
+          </div>
+          <div id="tab-actions" class="tab-panel">
+            <div class="section">
+              <div class="section-title">Commands</div>
+              <div id="commands">No commands saved</div>
+              <div class="command-editor">
+                <input id="command-name" type="text" placeholder="Command name" />
+                <input id="command-cwd" type="text" placeholder="/remote/path (optional)" />
+                <input id="command-command" type="text" placeholder="Command" />
+                <div class="row">
+                  <button id="command-save-btn">Add command</button>
+                  <button id="command-cancel-btn" class="ghost-btn">Cancel</button>
+                </div>
+              </div>
+            </div>
+            <div class="section">
+              <div class="section-title">Transfers</div>
+              <div class="transfer-block">
+                <input type="file" id="upload-file" />
+                <input type="text" id="upload-remote" placeholder="/remote/path/file" />
+                <button id="upload-btn">Upload</button>
+              </div>
+              <div class="transfer-block">
+                <input type="text" id="download-remote" placeholder="/remote/path/file" />
+                <button id="download-btn">Download</button>
+              </div>
+              <div id="transfer-status"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="workspace">
+        <div id="session-bar">
+          <div id="session-tabs"></div>
+          <button id="new-tab-btn" class="icon-btn" title="New tab" aria-label="New tab">+</button>
+        </div>
+        <div id="terminal-stack"></div>
+      </div>
+    </div>
+    <script src="./node_modules/xterm/lib/xterm.js"></script>
+    <script src="./node_modules/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+    <script type="module" src="renderer/index.js"></script>
+  </body>
+</html>
