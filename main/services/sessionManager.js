@@ -144,12 +144,25 @@ function mergePathEntries(primary, extra) {
 function buildLocalEnv(shellPath) {
   const env = { ...process.env };
   if (process.platform === 'darwin') {
+    const brewEntries = [];
+    if (fs.existsSync('/opt/homebrew/bin')) {
+      brewEntries.push('/opt/homebrew/bin');
+    }
+    if (fs.existsSync('/opt/homebrew/sbin')) {
+      brewEntries.push('/opt/homebrew/sbin');
+    }
+    if (fs.existsSync('/usr/local/bin')) {
+      brewEntries.push('/usr/local/bin');
+    }
+    if (fs.existsSync('/usr/local/sbin')) {
+      brewEntries.push('/usr/local/sbin');
+    }
     const baseEntries = String(env.PATH || '')
       .split(path.delimiter)
       .map((entry) => entry.trim())
       .filter(Boolean);
     const systemEntries = getMacPathEntries();
-    const merged = mergePathEntries(baseEntries, systemEntries);
+    const merged = mergePathEntries([...brewEntries, ...baseEntries], systemEntries);
     if (merged.length) {
       env.PATH = merged.join(path.delimiter);
     }
