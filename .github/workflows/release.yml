@@ -36,6 +36,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            release/**
+            release/**/*.AppImage
+            release/**/*.deb
+            release/**/*.dmg
+            release/**/*.exe
+            release/**/*.zip
+          fail_on_unmatched_files: false
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
