@@ -1,6 +1,6 @@
 {
   "name": "shelldock",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "macOS-first SSH client with xterm.js",
   "author": "Saad Abdullah <saadfast.qc@gmail.com>",
   "main": "main.js",
