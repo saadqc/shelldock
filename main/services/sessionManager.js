@@ -8,6 +8,13 @@ require('ssh2');
 const OSC7_PREFIX = '\u001b]7;file://';
 const OSC7_BEL = '\u0007';
 const OSC7_ST = '\u001b\\';
+const MAX_PASSWORD_ATTEMPTS = 3;
+const PASSWORD_PROMPT_REGEX = /(password:|passphrase[^:]*:)/i;
+const WINDOWS_PROMPT_REGEX = /(?:^|[\r\n])\s*(?:PS\s+)?([A-Za-z]:\\[^\r\n>]*)>\s?/g;
+
+function stripAnsi(value) {
+  return String(value || '').replace(/\u001b\[[0-9;?]*[A-Za-z]/g, '');
+}
 
 function readSetting(settings, category, subcategory, field, fallback) {
   const node = settings && settings[category] && settings[category][subcategory]
@@ -78,6 +85,26 @@ function splitPathList(value) {
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function buildHostKey(hostConfig) {
+  if (!hostConfig) return '';
+  const host = hostConfig.hostName || hostConfig.alias || '';
+  const user = hostConfig.user || process.env.USER || '';
+  const port = hostConfig.port ? Number(hostConfig.port) : 22;
+  return `${user}@${host}:${port}`;
+}
+
+function isAuthError(err) {
+  if (!err) return false;
+  if (err.level && String(err.level).toLowerCase().includes('authentication')) {
+    return true;
+  }
+  const message = String(err.message || '').toLowerCase();
+  return message.includes('authentication')
+    || message.includes('permission denied')
+    || message.includes('all configured authentication methods failed')
+    || message.includes('auth fail');
 }
 
 function getDefaultLocalShell() {
@@ -279,6 +306,43 @@ function consumeOsc7Sequences(session, data) {
   return paths;
 }
 
+function detectPasswordPrompt(session, data) {
+  if (!session || !data) return false;
+  if (session.authWindowUntil && Date.now() > session.authWindowUntil) {
+    if (!session.pendingPassword && !session.passwordPromptPromise && !session.awaitingPassword) {
+      return false;
+    }
+  }
+  session.promptBuffer = `${session.promptBuffer || ''}${data}`;
+  if (session.promptBuffer.length > 512) {
+    session.promptBuffer = session.promptBuffer.slice(-512);
+  }
+  if (PASSWORD_PROMPT_REGEX.test(session.promptBuffer)) {
+    session.promptBuffer = '';
+    return true;
+  }
+  return false;
+}
+
+function detectWindowsPromptCwd(session, data) {
+  if (!session || !data) return null;
+  const cleaned = stripAnsi(data);
+  session.cwdBuffer = `${session.cwdBuffer || ''}${cleaned}`;
+  if (session.cwdBuffer.length > 1024) {
+    session.cwdBuffer = session.cwdBuffer.slice(-1024);
+  }
+  let match = null;
+  let lastPath = null;
+  while ((match = WINDOWS_PROMPT_REGEX.exec(session.cwdBuffer)) !== null) {
+    lastPath = match[1];
+  }
+  if (lastPath) {
+    session.cwdBuffer = '';
+    return lastPath;
+  }
+  return null;
+}
+
 function injectPromptTracking(session, settings) {
   if (!session || !session.ptyProcess) {
     return;
@@ -301,7 +365,7 @@ function injectPromptTracking(session, settings) {
   session.ptyProcess.write(`${parts.join('\n')}\n`);
 }
 
-function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
+function createSessionManager({ sendToRenderer, logDebug, getSettings, requestPassword, passwordStore }) {
   const sessions = new Map();
 
   function getSession(tabId) {
@@ -314,9 +378,19 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
         sftpClient: null,
         listCache: new Map(),
         osc7Buffer: '',
+        promptBuffer: '',
+        cwdBuffer: '',
         lastCwd: '',
         hostConfig: null,
-        sessionType: null
+        sessionType: null,
+        passwordPromptPromise: null,
+        passwordAttempts: 0,
+        awaitingPassword: false,
+        pendingPassword: null,
+        lastPassword: null,
+        rememberPassword: false,
+        hostKey: '',
+        authWindowUntil: 0
       });
     }
     return sessions.get(tabId);
@@ -328,7 +402,81 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
     }
   }
 
-  async function connectSftp(tabId, hostConfig) {
+  function resetPasswordState(session) {
+    session.passwordPromptPromise = null;
+    session.passwordAttempts = 0;
+    session.awaitingPassword = false;
+    session.pendingPassword = null;
+    session.lastPassword = null;
+    session.rememberPassword = false;
+    session.promptBuffer = '';
+    session.cwdBuffer = '';
+    session.authWindowUntil = 0;
+  }
+
+  function writePassword(session, password) {
+    if (session && session.ptyProcess && password != null) {
+      session.ptyProcess.write(`${password}\n`);
+    }
+  }
+
+  async function requestPasswordForSession(tabId, hostConfig, context = {}) {
+    const session = getSession(tabId);
+    if (!session || typeof requestPassword !== 'function') {
+      return null;
+    }
+    if (session.passwordPromptPromise) {
+      return session.passwordPromptPromise;
+    }
+    if (session.passwordAttempts >= MAX_PASSWORD_ATTEMPTS) {
+      return { action: 'cancel', reason: 'max-attempts' };
+    }
+    session.passwordAttempts += 1;
+    session.passwordPromptPromise = (async () => {
+      try {
+        const result = await requestPassword({
+          tabId,
+          hostConfig,
+          attempt: session.passwordAttempts,
+          maxAttempts: MAX_PASSWORD_ATTEMPTS,
+          reason: context.reason || 'ssh',
+          error: context.error || ''
+        });
+        if (result && result.action === 'submit' && result.password) {
+          session.lastPassword = result.password;
+          session.rememberPassword = Boolean(result.remember);
+        }
+        return result;
+      } finally {
+        session.passwordPromptPromise = null;
+      }
+    })();
+    return session.passwordPromptPromise;
+  }
+
+  async function handlePasswordPrompt(tabId, session) {
+    if (!session) return;
+    session.awaitingPassword = true;
+    if (session.pendingPassword) {
+      writePassword(session, session.pendingPassword);
+      session.pendingPassword = null;
+      session.awaitingPassword = false;
+      return;
+    }
+    const response = await requestPasswordForSession(tabId, session.hostConfig, { reason: 'ssh' });
+    if (!response || response.action !== 'submit') {
+      await disconnect(tabId);
+      return;
+    }
+    if (session.awaitingPassword && session.lastPassword) {
+      writePassword(session, session.lastPassword);
+      session.awaitingPassword = false;
+    } else if (session.lastPassword) {
+      session.pendingPassword = session.lastPassword;
+    }
+  }
+
+  async function connectSftp(tabId, hostConfig, password) {
     const session = getSession(tabId);
     if (!session) {
       throw new Error('Invalid tab');
@@ -347,6 +495,10 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
         connectionOptions.privateKey = fs.readFileSync(hostConfig.identityFile, 'utf8');
       } catch (err) {
       }
+    }
+    if (password) {
+      connectionOptions.password = String(password);
+      connectionOptions.passphrase = String(password);
     }
 
     session.sftpClient = new SftpClient();
@@ -375,6 +527,9 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
 
     session.hostConfig = hostConfig;
     session.sessionType = 'ssh';
+    resetPasswordState(session);
+    session.hostKey = buildHostKey(hostConfig);
+    session.authWindowUntil = Date.now() + 60000;
     session.ptyProcess = pty.spawn('ssh', args, {
       name: 'xterm-color',
       cols: 80,
@@ -384,6 +539,9 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
     });
 
     session.ptyProcess.onData((data) => {
+      if (detectPasswordPrompt(session, data)) {
+        handlePasswordPrompt(tabId, session).catch(() => {});
+      }
       const cwdUpdates = consumeOsc7Sequences(session, data);
       for (const cwd of cwdUpdates) {
         if (cwd) {
@@ -392,6 +550,14 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
             send('ssh:cwd', { tabId, cwd });
           }
           send('ssh:prompt', { tabId, cwd });
+        }
+      }
+      if (!cwdUpdates.length) {
+        const windowsCwd = detectWindowsPromptCwd(session, data);
+        if (windowsCwd && windowsCwd !== session.lastCwd) {
+          session.lastCwd = windowsCwd;
+          send('ssh:cwd', { tabId, cwd: windowsCwd });
+          send('ssh:prompt', { tabId, cwd: windowsCwd });
         }
       }
       send('ssh:data', { tabId, data });
@@ -440,6 +606,14 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
           send('ssh:prompt', { tabId, cwd });
         }
       }
+      if (!cwdUpdates.length) {
+        const windowsCwd = detectWindowsPromptCwd(session, data);
+        if (windowsCwd && windowsCwd !== session.lastCwd) {
+          session.lastCwd = windowsCwd;
+          send('ssh:cwd', { tabId, cwd: windowsCwd });
+          send('ssh:prompt', { tabId, cwd: windowsCwd });
+        }
+      }
       send('ssh:data', { tabId, data });
     });
 
@@ -474,6 +648,40 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
     session.lastCwd = '';
     session.hostConfig = null;
     session.sessionType = null;
+    session.hostKey = '';
+    resetPasswordState(session);
+  }
+
+  async function kill(tabId) {
+    const session = getSession(tabId);
+    if (!session) {
+      return;
+    }
+    if (session.ptyProcess) {
+      try {
+        session.ptyProcess.kill('SIGKILL');
+      } catch (err) {
+        try {
+          session.ptyProcess.kill();
+        } catch (innerErr) {
+        }
+      }
+      session.ptyProcess = null;
+    }
+    if (session.sftpClient) {
+      try {
+        await session.sftpClient.end();
+      } catch (err) {
+      }
+      session.sftpClient = null;
+    }
+    session.listCache.clear();
+    session.osc7Buffer = '';
+    session.lastCwd = '';
+    session.hostConfig = null;
+    session.sessionType = null;
+    session.hostKey = '';
+    resetPasswordState(session);
   }
 
   function ensureSftpReady(tabId) {
@@ -521,6 +729,71 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
     session.listCache.delete(path.posix.dirname(remotePath));
   }
 
+  async function ensureSftpConnection(tabId, hostConfig) {
+    const session = getSession(tabId);
+    if (!session) {
+      throw new Error('Invalid tab');
+    }
+    if (session.sessionType === 'local') {
+      return;
+    }
+
+    const hostKey = session.hostKey || buildHostKey(hostConfig);
+    session.hostKey = hostKey;
+
+    let storedPassword = null;
+    if (passwordStore && typeof passwordStore.getPassword === 'function') {
+      storedPassword = passwordStore.getPassword(hostKey);
+    }
+
+    let currentPassword = session.lastPassword || storedPassword || null;
+    let storedPasswordTried = Boolean(storedPassword);
+    if (currentPassword && !session.lastPassword) {
+      session.lastPassword = currentPassword;
+    }
+    if (currentPassword && !session.pendingPassword) {
+      session.pendingPassword = currentPassword;
+    }
+
+    while (true) {
+      try {
+        await connectSftp(tabId, hostConfig, currentPassword);
+        if (currentPassword && session.rememberPassword && passwordStore && typeof passwordStore.setPassword === 'function') {
+          passwordStore.setPassword(hostKey, currentPassword);
+        }
+        return;
+      } catch (err) {
+        if (!isAuthError(err)) {
+          throw err;
+        }
+        if (storedPasswordTried && currentPassword && storedPassword && currentPassword === storedPassword) {
+          if (passwordStore && typeof passwordStore.deletePassword === 'function') {
+            passwordStore.deletePassword(hostKey);
+          }
+          storedPassword = null;
+        }
+        const response = await requestPasswordForSession(tabId, hostConfig, {
+          reason: 'sftp',
+          error: err && err.message ? err.message : ''
+        });
+        if (!response || response.action !== 'submit' || !response.password) {
+          if (response && response.reason === 'max-attempts') {
+            throw new Error('Authentication failed');
+          }
+          throw new Error('Connection canceled');
+        }
+        currentPassword = response.password;
+        if (session.awaitingPassword) {
+          writePassword(session, currentPassword);
+          session.awaitingPassword = false;
+        } else {
+          session.pendingPassword = currentPassword;
+        }
+        storedPasswordTried = false;
+      }
+    }
+  }
+
   async function connect(tabId, hostConfig) {
     await disconnect(tabId);
     try {
@@ -529,7 +802,7 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
         return;
       }
       spawnSshShell(tabId, hostConfig);
-      await connectSftp(tabId, hostConfig);
+      await ensureSftpConnection(tabId, hostConfig);
     } catch (err) {
       await disconnect(tabId);
       throw err;
@@ -628,6 +901,7 @@ function createSessionManager({ sendToRenderer, logDebug, getSettings }) {
     connect,
     connectLocal,
     disconnect,
+    kill,
     disconnectAll,
     write,
     resize,

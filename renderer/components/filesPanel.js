@@ -1,5 +1,10 @@
 import { getActiveTab } from '../state.js';
-import { getPathLabel, normalizeRemotePath, escapeShellPath } from '../utils.js';
+import {
+  getPathLabel,
+  normalizeRemotePath,
+  formatRemotePath,
+  buildRemoteCdCommand
+} from '../utils.js';
 import { getIconClassForItem } from '../services/iconService.js';
 import { MAX_RECENT } from '../constants.js';
 
@@ -80,10 +85,16 @@ export function createFilesPanel(state, persistenceService, editorService, actio
     forwardButton.disabled = tab.navIndex === -1 || tab.navIndex >= tab.navHistory.length - 1;
   }
 
-  function setPathInputValue(value) {
+  function setPathInputValue(tab, value) {
     if (pathInput) {
-      pathInput.value = value;
+      pathInput.value = formatRemotePath(value, tab ? tab.remotePathStyle : 'posix');
     }
+  }
+
+  function normalizeForTab(tab, value) {
+    return normalizeRemotePath(value, tab ? tab.currentPath : '/', {
+      pathStyle: tab ? tab.remotePathStyle : 'posix'
+    });
   }
 
   function updateSectionUI(name) {
@@ -107,14 +118,14 @@ export function createFilesPanel(state, persistenceService, editorService, actio
     if (!tab) {
       return;
     }
-    const normalized = normalizeRemotePath(nextPath, tab.currentPath);
+    const normalized = normalizeForTab(tab, nextPath);
     if (normalized === tab.currentPath && !options.force) {
       return;
     }
     tab.currentPath = normalized;
     tab.treeRootPath = normalized;
     if (tab.id === state.activeTabId) {
-      setPathInputValue(normalized);
+      setPathInputValue(tab, normalized);
     }
     if (options.pushNav) {
       const currentEntry = tab.navHistory[tab.navIndex];
@@ -172,13 +183,22 @@ export function createFilesPanel(state, persistenceService, editorService, actio
       persistenceService.setStatus('Enter a path', true, tab);
       return;
     }
-    const normalized = normalizeRemotePath(rawInput, tab.currentPath);
+    const normalized = normalizeForTab(tab, rawInput);
     if (!normalized) {
       return;
     }
     if (options.sendCommand !== false) {
+      if (tab.remotePathStyle === 'windows' && normalized === '/') {
+        updateTabPath(tab, normalized, {
+          pushNav: options.pushNav,
+          recordRecent: options.recordRecent,
+          clearCache: options.clearCache
+        });
+        return;
+      }
       tab.isBusy = true;
-      state.api.write(tab.id, `cd ${escapeShellPath(normalized)}\n`);
+      const cdCommand = buildRemoteCdCommand(normalized, { pathStyle: tab.remotePathStyle });
+      state.api.write(tab.id, `${cdCommand}\n`);
     }
     updateTabPath(tab, normalized, {
       pushNav: options.pushNav,
@@ -212,6 +232,15 @@ export function createFilesPanel(state, persistenceService, editorService, actio
         ? await state.api.listLocal(tab.id, remotePath)
         : await state.api.list(tab.id, remotePath);
       tab.treeCache.set(remotePath, list || []);
+      if (tab.sessionType !== 'local' && remotePath === '/' && Array.isArray(list)) {
+        const hasDriveRoot = list.some((entry) => entry && /^[A-Za-z]:$/.test(entry.name || ''));
+        if (hasDriveRoot && tab.remotePathStyle !== 'windows') {
+          tab.remotePathStyle = 'windows';
+          if (tab.id === state.activeTabId) {
+            setPathInputValue(tab, tab.currentPath || '/');
+          }
+        }
+      }
     } catch (err) {
       persistenceService.setStatus('Failed to list path', true, tab);
     }
@@ -353,7 +382,7 @@ export function createFilesPanel(state, persistenceService, editorService, actio
         if (!files.length) return;
         const targetDir = item.type === 'd'
           ? item.path
-          : normalizeRemotePath(item.path, tab.currentPath).replace(/\/[^/]+$/, '') || '/';
+          : normalizeForTab(tab, item.path).replace(/\/[^/]+$/, '') || '/';
         for (const file of files) {
           const remotePath = `${targetDir.replace(/\/$/, '')}/${file.name}`;
           const id = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -399,8 +428,9 @@ export function createFilesPanel(state, persistenceService, editorService, actio
 
       const button = document.createElement('button');
       button.className = 'path-btn';
-      button.textContent = getPathLabel(entry);
-      button.title = entry;
+      const pathStyle = options.pathStyle || 'posix';
+      button.textContent = getPathLabel(entry, pathStyle);
+      button.title = formatRemotePath(entry, pathStyle) || entry;
       button.addEventListener('click', () => {
         const tab = getActiveTab(state);
         setSelectedPath(tab, entry);
@@ -433,6 +463,7 @@ export function createFilesPanel(state, persistenceService, editorService, actio
     }
     const saved = persistenceService.getHostState(state.appState.savedLocations, tab.host);
     renderPathList(savedPaths, saved, {
+      pathStyle: tab.remotePathStyle,
       onRemove: (entry) => {
         const next = saved.filter((item) => item !== entry);
         persistenceService.updateHostState('savedLocations', tab ? tab.host : '', next);
@@ -449,7 +480,7 @@ export function createFilesPanel(state, persistenceService, editorService, actio
       return;
     }
     const recent = persistenceService.getHostState(state.appState.recentLocations, tab.host);
-    renderPathList(recentPaths, recent);
+    renderPathList(recentPaths, recent, { pathStyle: tab.remotePathStyle });
   }
 
   function saveCurrentLocation() {
@@ -493,14 +524,14 @@ export function createFilesPanel(state, persistenceService, editorService, actio
 
     pathGoButton.addEventListener('click', () => {
       const tab = getActiveTab(state);
-      setSelectedPath(tab, normalizeRemotePath(pathInput.value, tab ? tab.currentPath : '/'));
+      setSelectedPath(tab, normalizeForTab(tab, pathInput.value));
       navigateToPathForTab(tab, pathInput.value, { pushNav: true, recordRecent: true, clearCache: true });
     });
 
     pathInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         const tab = getActiveTab(state);
-        setSelectedPath(tab, normalizeRemotePath(pathInput.value, tab ? tab.currentPath : '/'));
+        setSelectedPath(tab, normalizeForTab(tab, pathInput.value));
         navigateToPathForTab(tab, pathInput.value, { pushNav: true, recordRecent: true, clearCache: true });
       }
     });

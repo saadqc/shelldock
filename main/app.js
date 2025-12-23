@@ -7,6 +7,7 @@ const { loadState, saveState } = require('./services/stateStore');
 const { loadSettings, saveSettings } = require('./services/settingsStore');
 const { listConfigHosts, resolveHost } = require('./services/sshConfig');
 const { createSessionManager } = require('./services/sessionManager');
+const { createPasswordStore } = require('./services/passwordStore');
 
 app.commandLine.appendSwitch('disable-background-networking');
 app.commandLine.appendSwitch(
@@ -18,11 +19,55 @@ let mainWindow = null;
 let settingsWindow = null;
 let state = null;
 let settings = null;
+let passwordStore = null;
+const pendingPasswordRequests = new Map();
+let passwordRequestCounter = 0;
 
 function logDebug(...args) {
   if (process.env.SHELLDOCK_DEBUG) {
     console.log('[shelldock]', ...args);
   }
+}
+
+function buildHostLabel(hostConfig) {
+  if (!hostConfig) return '';
+  const host = hostConfig.hostName || hostConfig.alias || '';
+  const user = hostConfig.user || process.env.USER || '';
+  const port = hostConfig.port ? Number(hostConfig.port) : 22;
+  const base = user ? `${user}@${host}` : host;
+  return port && port !== 22 ? `${base}:${port}` : base;
+}
+
+function flushPasswordRequests() {
+  for (const resolve of pendingPasswordRequests.values()) {
+    resolve({ action: 'cancel' });
+  }
+  pendingPasswordRequests.clear();
+}
+
+function requestPassword(payload) {
+  if (!mainWindow) {
+    return Promise.resolve(null);
+  }
+  const requestId = `pw-${Date.now()}-${passwordRequestCounter += 1}`;
+  const hostConfig = payload && payload.hostConfig ? payload.hostConfig : null;
+  const message = payload && payload.error ? String(payload.error) : '';
+  const promptPayload = {
+    requestId,
+    tabId: payload && payload.tabId ? payload.tabId : null,
+    hostAlias: hostConfig && hostConfig.alias ? hostConfig.alias : '',
+    hostLabel: buildHostLabel(hostConfig),
+    attempt: payload && payload.attempt ? payload.attempt : 1,
+    maxAttempts: payload && payload.maxAttempts ? payload.maxAttempts : 1,
+    reason: payload && payload.reason ? payload.reason : 'ssh',
+    error: message,
+    rememberAvailable: passwordStore ? passwordStore.isAvailable() : false
+  };
+
+  return new Promise((resolve) => {
+    pendingPasswordRequests.set(requestId, resolve);
+    mainWindow.webContents.send('ssh:password-request', promptPayload);
+  });
 }
 
 const sessionManager = createSessionManager({
@@ -32,7 +77,14 @@ const sessionManager = createSessionManager({
     }
   },
   logDebug,
-  getSettings: () => settings
+  getSettings: () => settings,
+  requestPassword,
+  passwordStore: {
+    isAvailable: () => (passwordStore ? passwordStore.isAvailable() : false),
+    getPassword: (key) => (passwordStore ? passwordStore.getPassword(key) : null),
+    setPassword: (key, password) => (passwordStore ? passwordStore.setPassword(key, password) : false),
+    deletePassword: (key) => (passwordStore ? passwordStore.deletePassword(key) : false)
+  }
 });
 
 function buildMenu() {
@@ -86,6 +138,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, '..', 'index.html'));
   mainWindow.on('closed', () => {
     mainWindow = null;
+    flushPasswordRequests();
   });
 
   if (app.dock && fs.existsSync(ICON_PATH)) {
@@ -123,6 +176,7 @@ function createSettingsWindow() {
 app.whenReady().then(() => {
   state = loadState();
   settings = loadSettings();
+  passwordStore = createPasswordStore({ app, logDebug });
   buildMenu();
 
   ipcMain.handle('app:get-state', () => state);
@@ -184,10 +238,33 @@ app.whenReady().then(() => {
     }
   });
 
+  ipcMain.handle('ssh:password-response', (event, payload) => {
+    const requestId = payload && payload.requestId ? payload.requestId : null;
+    if (!requestId || !pendingPasswordRequests.has(requestId)) {
+      return { ok: false, error: 'Unknown password request' };
+    }
+    const resolve = pendingPasswordRequests.get(requestId);
+    pendingPasswordRequests.delete(requestId);
+    resolve({
+      action: payload && payload.action === 'submit' ? 'submit' : 'cancel',
+      password: payload && payload.password ? String(payload.password) : '',
+      remember: Boolean(payload && payload.remember)
+    });
+    return { ok: true };
+  });
+
   ipcMain.handle('ssh:disconnect', async (event, payload) => {
     const tabId = payload && payload.tabId ? payload.tabId : null;
     if (tabId) {
       await sessionManager.disconnect(tabId);
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle('ssh:kill', async (event, payload) => {
+    const tabId = payload && payload.tabId ? payload.tabId : null;
+    if (tabId) {
+      await sessionManager.kill(tabId);
     }
     return { ok: true };
   });

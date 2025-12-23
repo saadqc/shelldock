@@ -5,6 +5,7 @@ import { createEditorService } from './services/editorService.js';
 import { createFilesPanel } from './components/filesPanel.js';
 import { createActionsPanel } from './components/actionsPanel.js';
 import { createSessionTabs } from './components/sessionTabs.js';
+import { createPasswordPrompt } from './components/passwordPrompt.js';
 import { matchesShortcutEvent } from './utils.js';
 
 const api = window.api;
@@ -59,6 +60,7 @@ actionsBridge.createTransferRow = actionsPanel.createTransferRow;
 actionsBridge.markTransferComplete = actionsPanel.markTransferComplete;
 actionsBridge.updateTransferRowForTab = actionsPanel.updateTransferRowForTab;
 const sessionTabs = createSessionTabs(state, persistenceService, filesPanel, actionsPanel, settingsService);
+createPasswordPrompt(state);
 
 function reportInitError(error) {
   if (!elements.statusLabel) return;

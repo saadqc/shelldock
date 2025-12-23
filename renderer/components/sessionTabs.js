@@ -1,5 +1,5 @@
 import { getActiveTab, getTab } from '../state.js';
-import { escapeShellPath } from '../utils.js';
+import { buildRemoteCdCommand, formatRemotePath } from '../utils.js';
 import { LOCAL_HOST_VALUE, LOCAL_HOST_LABEL } from '../constants.js';
 
 export function createSessionTabs(state, persistenceService, filesPanel, actionsPanel, settingsService) {
@@ -21,9 +21,18 @@ export function createSessionTabs(state, persistenceService, filesPanel, actions
   tabContextMenu.className = 'context-menu';
   document.body.appendChild(tabContextMenu);
 
+  const terminalContextMenu = document.createElement('div');
+  terminalContextMenu.className = 'context-menu';
+  document.body.appendChild(terminalContextMenu);
+
   function hideTabContextMenu() {
     tabContextMenu.classList.remove('open');
     tabContextMenu.innerHTML = '';
+  }
+
+  function hideTerminalContextMenu() {
+    terminalContextMenu.classList.remove('open');
+    terminalContextMenu.innerHTML = '';
   }
 
   function showTabContextMenu(x, y, tabId) {
@@ -41,8 +50,35 @@ export function createSessionTabs(state, persistenceService, filesPanel, actions
     tabContextMenu.classList.add('open');
   }
 
-  document.addEventListener('click', () => hideTabContextMenu());
-  window.addEventListener('blur', () => hideTabContextMenu());
+  function showTerminalContextMenu(x, y, tabId) {
+    terminalContextMenu.innerHTML = '';
+    const tab = state.tabs.get(tabId);
+    const killButton = document.createElement('button');
+    killButton.type = 'button';
+    killButton.textContent = 'Kill terminal';
+    if (!tab || !tab.connected) {
+      killButton.disabled = true;
+    }
+    killButton.addEventListener('click', () => {
+      if (state.api && typeof state.api.kill === 'function') {
+        state.api.kill(tabId);
+      }
+      hideTerminalContextMenu();
+    });
+    terminalContextMenu.appendChild(killButton);
+    terminalContextMenu.style.left = `${x}px`;
+    terminalContextMenu.style.top = `${y}px`;
+    terminalContextMenu.classList.add('open');
+  }
+
+  document.addEventListener('click', () => {
+    hideTabContextMenu();
+    hideTerminalContextMenu();
+  });
+  window.addEventListener('blur', () => {
+    hideTabContextMenu();
+    hideTerminalContextMenu();
+  });
 
   function ensureHostOption(host) {
     if (!hostSelect || !host) return;
@@ -59,6 +95,7 @@ export function createSessionTabs(state, persistenceService, filesPanel, actions
     if (!tab) return;
     tab.host = host || '';
     tab.sessionType = host === LOCAL_HOST_VALUE ? 'local' : 'ssh';
+    tab.remotePathStyle = 'posix';
     if (state.appState && host) {
       state.appState = { ...state.appState, lastHost: host };
       state.api.updateState({ lastHost: host });
@@ -150,7 +187,7 @@ export function createSessionTabs(state, persistenceService, filesPanel, actions
       tab.host = hostSelect.value || '';
     }
     if (state.elements.pathInput) {
-      state.elements.pathInput.value = tab.currentPath;
+      state.elements.pathInput.value = formatRemotePath(tab.currentPath, tab.remotePathStyle);
     }
     updateConnectUi(tab);
     filesPanel.renderSavedLocations();
@@ -226,6 +263,15 @@ export function createSessionTabs(state, persistenceService, filesPanel, actions
     term.loadAddon(fitAddon);
     term.open(container);
 
+    container.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      hideTabContextMenu();
+      showTerminalContextMenu(event.clientX, event.clientY, id);
+    });
+
+    const initialPath = initial.currentPath || '/';
+    const inferredStyle = /^\/[A-Za-z]:/.test(initialPath) ? 'windows' : 'posix';
     const tabState = {
       id,
       host: initial.host || '',
@@ -238,15 +284,16 @@ export function createSessionTabs(state, persistenceService, filesPanel, actions
       expandedDirs: new Set([initial.treeRootPath || initial.currentPath || '/']),
       treePages: new Map(),
       transferRows: new Map(),
-      currentPath: initial.currentPath || '/',
-      treeRootPath: initial.treeRootPath || initial.currentPath || '/',
+      currentPath: initialPath,
+      treeRootPath: initial.treeRootPath || initialPath || '/',
       navHistory: [],
       navIndex: -1,
       statusMessage: 'Disconnected',
       statusIsError: false,
       restoreConnected: Boolean(initial.connected),
       isBusy: false,
-      treeRefreshTimer: null
+      treeRefreshTimer: null,
+      remotePathStyle: inferredStyle
     };
 
     term.onData((data) => {
@@ -380,6 +427,11 @@ export function createSessionTabs(state, persistenceService, filesPanel, actions
     state.api.onSshCwd((payload) => {
       const tab = getTab(state, payload.tabId);
       if (!tab || !payload.cwd) return;
+      const cwdValue = String(payload.cwd);
+      const looksWindows = /^[A-Za-z]:[\\/]/.test(cwdValue) || /^\/[A-Za-z]:/.test(cwdValue);
+      if (looksWindows && tab.remotePathStyle !== 'windows') {
+        tab.remotePathStyle = 'windows';
+      }
       filesPanel.updateTabPath(tab, payload.cwd, {
         pushNav: true,
         recordRecent: true,
@@ -448,7 +500,8 @@ export function createSessionTabs(state, persistenceService, filesPanel, actions
     const targetPath = options.path || tab.currentPath || '/';
     if (options.restorePath) {
       filesPanel.updateTabPath(tab, options.restorePath, { pushNav: true, recordRecent: false, clearCache: true, force: true });
-      state.api.write(tab.id, `cd ${escapeShellPath(options.restorePath)}\n`);
+      const cdCommand = buildRemoteCdCommand(options.restorePath, { pathStyle: tab.remotePathStyle });
+      state.api.write(tab.id, `${cdCommand}\n`);
     } else {
       filesPanel.updateTabPath(tab, targetPath, { pushNav: true, recordRecent: false, clearCache: true, force: true });
     }

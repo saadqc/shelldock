@@ -8,8 +8,10 @@ contextBridge.exposeInMainWorld('api', {
   getHosts: () => ipcRenderer.invoke('ssh:hosts'),
   connect: (tabId, host) => ipcRenderer.invoke('ssh:connect', { tabId, host }),
   disconnect: (tabId) => ipcRenderer.invoke('ssh:disconnect', { tabId }),
+  kill: (tabId) => ipcRenderer.invoke('ssh:kill', { tabId }),
   write: (tabId, data) => ipcRenderer.send('ssh:write', { tabId, data }),
   resize: (tabId, cols, rows) => ipcRenderer.send('ssh:resize', { tabId, size: { cols, rows } }),
+  respondPassword: (payload) => ipcRenderer.invoke('ssh:password-response', payload),
   list: (tabId, remotePath) => ipcRenderer.invoke('sftp:list', { tabId, path: remotePath }),
   listLocal: (tabId, localPath) => ipcRenderer.invoke('local:list', { tabId, path: localPath }),
   download: (tabId, payload) => ipcRenderer.invoke('sftp:download', { tabId, ...payload }),
@@ -23,5 +25,6 @@ contextBridge.exposeInMainWorld('api', {
   onSshCwd: (handler) => ipcRenderer.on('ssh:cwd', (event, payload) => handler(payload)),
   onSshExit: (handler) => ipcRenderer.on('ssh:exit', (event, payload) => handler(payload)),
   onSshPrompt: (handler) => ipcRenderer.on('ssh:prompt', (event, payload) => handler(payload)),
+  onSshPasswordRequest: (handler) => ipcRenderer.on('ssh:password-request', (event, payload) => handler(payload)),
   onSftpProgress: (handler) => ipcRenderer.on('sftp:progress', (event, payload) => handler(payload))
 });

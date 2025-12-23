@@ -6,26 +6,33 @@ import {
   getPathLabel,
   matchAssociation,
   normalizeFileInput,
-  normalizeRemotePath
+  normalizeRemotePath,
+  formatRemotePath
 } from '../utils.js';
 import { LARGE_FILE_BYTES } from '../constants.js';
 
 export function createEditorService(state, settingsService, actionsPanel, persistenceService) {
   function getCurrentHostContext(fileInfo) {
     const tab = getActiveTab(state);
+    const pathStyle = tab ? tab.remotePathStyle : 'posix';
     const hostKey = tab ? tab.host : '';
     const config = state.hostConfigs.get(hostKey) || {};
     const host = config.hostName || config.alias || hostKey;
     const user = config.user || '';
     const port = config.port || '22';
-    const normalized = normalizeRemotePath(fileInfo.path, tab ? tab.currentPath : '/');
+    const normalized = normalizeRemotePath(fileInfo.path, tab ? tab.currentPath : '/', { pathStyle });
     const escapedPath = escapeShellPath(normalized);
-    const name = fileInfo.name || getPathLabel(normalized);
+    const shellPath = formatRemotePath(normalized, pathStyle);
+    const escapedShellPath = escapeShellPath(shellPath);
+    const name = fileInfo.name || getPathLabel(normalized, pathStyle);
     const extIndex = name.lastIndexOf('.');
     const ext = extIndex > 0 ? name.slice(extIndex + 1) : '';
     return {
       path: normalized,
       escapedPath,
+      shellPath,
+      escapedShellPath,
+      pathStyle,
       host,
       alias: hostKey,
       user,
@@ -69,7 +76,7 @@ export function createEditorService(state, settingsService, actionsPanel, persis
 
     if (mode === 'local-download') {
       const id = `open-${Date.now()}`;
-      actionsPanel.createTransferRow(id, `Open ${getPathLabel(context.path)}`);
+      actionsPanel.createTransferRow(id, `Open ${getPathLabel(context.path, context.pathStyle)}`);
       const result = await state.api.download(tab.id, { remotePath: context.path, open: true, id });
       if (result && result.ok) {
         actionsPanel.markTransferComplete(id, 'opened');
@@ -94,10 +101,15 @@ export function createEditorService(state, settingsService, actionsPanel, persis
       return;
     }
 
-  const command = fillTemplate(commandTemplate, context);
-  tab.isBusy = true;
-  state.api.write(tab.id, `${command}\n`);
-}
+    const shellContext = {
+      ...context,
+      path: context.shellPath || context.path,
+      escapedPath: context.escapedShellPath || context.escapedPath
+    };
+    const command = fillTemplate(commandTemplate, shellContext);
+    tab.isBusy = true;
+    state.api.write(tab.id, `${command}\n`);
+  }
 
   return {
     openFile

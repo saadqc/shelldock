@@ -1,5 +1,5 @@
 import { getActiveTab, getTab } from '../state.js';
-import { escapeShellPath } from '../utils.js';
+import { escapeShellPath, normalizeRemotePath, formatRemotePath } from '../utils.js';
 
 export function createActionsPanel(state, persistenceService, filesPanel) {
   const {
@@ -211,11 +211,12 @@ export function createActionsPanel(state, persistenceService, filesPanel) {
         return;
       }
       const file = uploadInput.files[0];
-      const remotePath = uploadRemoteInput.value.trim();
-      if (!file || !remotePath) {
+      const rawRemote = uploadRemoteInput.value.trim();
+      if (!file || !rawRemote) {
         persistenceService.setStatus('Select a file and remote path', true, tab);
         return;
       }
+      const remotePath = normalizeRemotePath(rawRemote, tab.currentPath, { pathStyle: tab.remotePathStyle });
       const id = `upload-${Date.now()}`;
       createTransferRow(id, `Upload ${file.name}`);
       const result = await state.api.upload(tab.id, { localPath: file.path, remotePath, id });
@@ -236,13 +237,14 @@ export function createActionsPanel(state, persistenceService, filesPanel) {
         persistenceService.setStatus('SFTP unavailable for local session', true, tab);
         return;
       }
-      const remotePath = downloadRemoteInput.value.trim();
-      if (!remotePath) {
+      const rawRemote = downloadRemoteInput.value.trim();
+      if (!rawRemote) {
         persistenceService.setStatus('Enter a remote path', true, tab);
         return;
       }
       const id = `download-${Date.now()}`;
-      createTransferRow(id, `Download ${remotePath}`);
+      const remotePath = normalizeRemotePath(rawRemote, tab.currentPath, { pathStyle: tab.remotePathStyle });
+      createTransferRow(id, `Download ${formatRemotePath(remotePath, tab.remotePathStyle)}`);
       const result = await state.api.download(tab.id, { remotePath, id });
       if (result && result.ok) {
         markTransferComplete(id, 'downloaded');

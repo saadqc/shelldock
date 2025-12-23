@@ -2,18 +2,8 @@ export function escapeShellPath(value) {
   return `"${String(value).replace(/"/g, '\\"')}"`;
 }
 
-export function normalizeRemotePath(value, basePath) {
-  if (!value) {
-    return '/';
-  }
-  const trimmed = String(value).trim();
-  if (!trimmed) {
-    return '/';
-  }
-  const isAbsolute = trimmed.startsWith('/');
-  const base = isAbsolute ? '/' : (basePath || '/');
-  const raw = isAbsolute ? trimmed : `${base.replace(/\/$/, '')}/${trimmed}`;
-  const parts = raw.split('/');
+function normalizePosixPath(raw) {
+  const parts = String(raw || '').split('/');
   const stack = [];
   for (const part of parts) {
     if (!part || part === '.') {
@@ -28,7 +18,93 @@ export function normalizeRemotePath(value, basePath) {
   return `/${stack.join('/')}` || '/';
 }
 
-export function getPathLabel(value) {
+function isWindowsDrivePath(value) {
+  return /^[a-zA-Z]:([\\/]|$)/.test(value || '');
+}
+
+function normalizeWindowsRemotePath(value, basePath) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) {
+    return basePath || '/';
+  }
+  const forward = trimmed.replace(/\\/g, '/');
+  const driveMatch = forward.match(/^([a-zA-Z]):(?:\/(.*))?$/);
+  if (driveMatch) {
+    const drive = driveMatch[1].toUpperCase();
+    const rest = driveMatch[2] || '';
+    return rest ? normalizePosixPath(`/${drive}:/${rest}`) : `/${drive}:`;
+  }
+  if (/^\/[a-zA-Z]:/.test(forward)) {
+    return normalizePosixPath(forward);
+  }
+  if (forward.startsWith('/')) {
+    return normalizePosixPath(forward);
+  }
+  const base = basePath || '/';
+  return normalizePosixPath(`${base.replace(/\/$/, '')}/${forward}`);
+}
+
+export function normalizeRemotePath(value, basePath, options = {}) {
+  if (!value) {
+    return '/';
+  }
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return '/';
+  }
+  const pathStyle = options.pathStyle || 'posix';
+  if (pathStyle === 'windows' || isWindowsDrivePath(trimmed)) {
+    return normalizeWindowsRemotePath(trimmed, basePath);
+  }
+  const isAbsolute = trimmed.startsWith('/');
+  const base = isAbsolute ? '/' : (basePath || '/');
+  const raw = isAbsolute ? trimmed : `${base.replace(/\/$/, '')}/${trimmed}`;
+  return normalizePosixPath(raw);
+}
+
+export function formatRemotePath(value, pathStyle) {
+  if (pathStyle !== 'windows') {
+    return String(value || '').trim() || '/';
+  }
+  const trimmed = String(value || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  const forward = trimmed.replace(/\\/g, '/');
+  if (forward === '/') {
+    return '/';
+  }
+  const match = forward.match(/^\/?([a-zA-Z]):(?:\/(.*))?$/);
+  if (match) {
+    const drive = match[1].toUpperCase();
+    const rest = match[2] ? match[2].replace(/\//g, '\\') : '';
+    return rest ? `${drive}:\\${rest}` : `${drive}:\\`;
+  }
+  return forward.replace(/\//g, '\\');
+}
+
+export function buildRemoteCdCommand(targetPath, options = {}) {
+  const rawPath = String(targetPath || '').trim();
+  const pathStyle = options.pathStyle || 'posix';
+  const isWindowsLike = /^\/?[a-zA-Z]:/.test(rawPath);
+  const effectiveStyle = pathStyle === 'windows' || isWindowsLike ? 'windows' : 'posix';
+  const displayPath = effectiveStyle === 'windows' ? formatRemotePath(rawPath, effectiveStyle) : rawPath;
+  return `cd ${escapeShellPath(displayPath)}`;
+}
+
+export function getPathLabel(value, pathStyle) {
+  if (pathStyle === 'windows') {
+    const display = formatRemotePath(value, pathStyle);
+    const trimmed = display.replace(/\\$/, '');
+    if (!trimmed) {
+      return display || '';
+    }
+    if (/^[A-Za-z]:$/.test(trimmed)) {
+      return trimmed;
+    }
+    const parts = trimmed.split('\\').filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : trimmed;
+  }
   const trimmed = String(value || '').replace(/\/$/, '');
   if (!trimmed) {
     return '/';

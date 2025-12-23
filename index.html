@@ -524,6 +524,68 @@
       .context-menu button:hover {
         background: #1a2232;
       }
+      .modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(8, 12, 18, 0.7);
+        z-index: 2000;
+      }
+      .modal.open {
+        display: flex;
+      }
+      .modal-card {
+        width: 360px;
+        max-width: 90vw;
+        background: #141a26;
+        border: 1px solid #2a2f3a;
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+        display: grid;
+        gap: 10px;
+      }
+      .modal-title {
+        font-size: 14px;
+        font-weight: 600;
+        color: #e6e6e6;
+      }
+      .modal-subtitle {
+        font-size: 12px;
+        color: #9aa4b2;
+      }
+      .modal-message {
+        font-size: 12px;
+        color: #b7c1d4;
+      }
+      .modal-field {
+        display: grid;
+        gap: 6px;
+        font-size: 12px;
+      }
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .modal-actions .ghost-btn {
+        background: transparent;
+        border-color: #2a2f3a;
+        color: #9aa4b2;
+      }
+      .modal-checkbox {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: #9aa4b2;
+      }
+      .modal-checkbox input {
+        width: 14px;
+        height: 14px;
+      }
     </style>
   </head>
   <body>
@@ -614,6 +676,26 @@
           <button id="new-tab-btn" class="icon-btn" title="New tab" aria-label="New tab">+</button>
         </div>
         <div id="terminal-stack"></div>
+      </div>
+    </div>
+    <div id="password-modal" class="modal" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="password-title">
+        <div id="password-title" class="modal-title">SSH Password Required</div>
+        <div id="password-host" class="modal-subtitle"></div>
+        <div id="password-message" class="modal-message"></div>
+        <div id="password-attempt" class="modal-subtitle"></div>
+        <label class="modal-field">
+          <span>Password</span>
+          <input id="password-input" type="password" autocomplete="current-password" />
+        </label>
+        <label class="modal-checkbox">
+          <input id="password-remember" type="checkbox" />
+          <span id="password-remember-text">Remember password for this host</span>
+        </label>
+        <div class="modal-actions">
+          <button id="password-cancel" class="ghost-btn" type="button">Cancel</button>
+          <button id="password-submit" type="button">Connect</button>
+        </div>
       </div>
     </div>
     <script src="./node_modules/xterm/lib/xterm.js"></script>
